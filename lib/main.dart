@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:swipe_path_typer/swipe_path_typer.dart';
 
 void main() {
   runApp(const MyApp());
@@ -8,8 +9,10 @@ void main() {
 
 enum GamePhase {
   starting,     // Phase 1: full word, full canvas
-  splitWord,    // Phase 2: split view, one side hidden
-  formedWord,   // Phase 3: new word formed
+  startSplit,    // Phase 2: split process and animation
+  splitting,    // Phase 2: split process and animation
+  splitWord,    // Phase 3: split view, one side hidden
+  formedWord,   // Phase 4: new word formed
 }
 
 
@@ -34,15 +37,22 @@ class GamePage extends StatefulWidget {
 }
 
 class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin {
-  Duration _turnDuration = const Duration(seconds: 60);
-  int _score = 0;
+  final Duration _turnDuration = const Duration(seconds: 60);
+  final int _score = 0;
   String _currentWord = "";
+  final List<String> _wordParts = [""];
   final List<int> _currentSplitIndexes = [0];
   int _currentTurn = 0;
   bool _isLoading = true;
   final List<int> _currentColorsIndexes = [0];
+  final List<int> _prevColorsIndexes = [0];
   bool _leftSideHidden = false;
   int _startColorIndex = 0;
+  List<String> _allStarterWords = []; // Loaded from starter_answers.txt
+  List<String> _allValidWords = [];  // Loaded from english_cleaned.txt
+  List<String> _availableTiles = [];
+
+  final List<String> _previousWords = [];
 
   late final AnimationController _controller;
   late final Animation<double> opacity;
@@ -52,8 +62,6 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
 
   @override
   void initState() {
-    super.initState();
-
     _controller = AnimationController(
       duration: const Duration(seconds: 1),
       vsync: this,
@@ -72,15 +80,32 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
     _startColorIndex = random.nextInt(Colors.primaries.length);
     _currentColorsIndexes.add(_startColorIndex);
 
+    _prevColorsIndexes.clear();
+    _prevColorsIndexes.add(_startColorIndex);
+
     _initializeGame();
+    super.initState();
+  }
+
+  Future<void> _loadStarterWords() async {
+    final content = await rootBundle.loadString('assets/word_lists/starter_answers.txt');
+    _allStarterWords = content.split('\n').map((e) => e.trim()).where((w) => w.length > 2).toList();
+  }
+
+  Future<void> _loadValidWords() async {
+    final content = await rootBundle.loadString('assets/word_lists/english_cleaned.txt');
+    _allValidWords = content.split('\n').map((e) => e.trim()).where((w) => w.length > 2).toList();
   }
 
   Future<void> _initializeGame() async {
-    final starterContent = await rootBundle.loadString('assets/word_lists/starter_answers.txt');
-    final List<String> starterWords = starterContent.split('\n').map((e) => e.trim()).toList();
+    await _loadStarterWords();
+
+    await _loadValidWords();
 
     final random = Random();
-    _currentWord = starterWords[random.nextInt(starterWords.length)];
+    _currentWord = _allStarterWords[random.nextInt(_allStarterWords.length)];
+
+    _previousWords.add(_currentWord);
 
     _controller.forward(from: 0.0);
     setState(() {
@@ -88,6 +113,7 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
     });
 
     await Future.delayed(const Duration(seconds: 2));
+    _currentTurn += 1;
 
     _currentSplitIndexes.clear();
   
@@ -100,13 +126,113 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
 
       _leftSideHidden = random.nextBool();
 
-      _phase = GamePhase.splitWord;
+      _prevColorsIndexes.clear();
+      _prevColorsIndexes.addAll(_currentColorsIndexes);
+
+      if (_leftSideHidden) {
+        _currentColorsIndexes.insert(0, _startColorIndex+_currentTurn);
+      } else {
+        _currentColorsIndexes.add(_startColorIndex+_currentTurn);
+      }
+
+      _phase = GamePhase.startSplit;
+    });
+    Future.delayed(const Duration(milliseconds: 100), () {
+      setState(() {
+        _phase = GamePhase.splitting;
+        _generateTiles();
+      });
+    });
+    Future.delayed(const Duration(milliseconds: 300), () {
+      setState(() {
+        _phase = GamePhase.splitWord;
+      });
     });
   }
+  
+void _generateTiles() async {
+  final visiblePart = _leftSideHidden
+      ? _currentWord.substring(_currentSplitIndexes[0])
+      : _currentWord.substring(0, _currentSplitIndexes[0]);
 
-  Widget buildSplitText(String word, List<int> splitIndexes) {
-    final splitPoints = [0, ...splitIndexes, word.length];
+  final starterCandidates = _allStarterWords.where((word) {
+    if (_previousWords.contains(word)) return false;
+    return _leftSideHidden ? word.endsWith(visiblePart) : word.startsWith(visiblePart);
+  }).toList();
 
+  final candidates = _allValidWords.where((word) {
+    if (_previousWords.contains(word)) return false;
+    return _leftSideHidden ? word.endsWith(visiblePart) : word.startsWith(visiblePart);
+  }).toList();
+
+  final starterMissingParts = starterCandidates
+      .map((w) => _leftSideHidden
+          ? w.substring(0, w.length - visiblePart.length)
+          : w.substring(visiblePart.length))
+      .where((s) => s.isNotEmpty)
+      .toSet()
+      .toList();
+
+  final missingParts = candidates
+      .map((w) => _leftSideHidden
+          ? w.substring(0, w.length - visiblePart.length)
+          : w.substring(visiblePart.length))
+      .where((s) => s.isNotEmpty)
+      .toSet()
+      .toList();
+
+  starterMissingParts.shuffle();
+  missingParts.shuffle();
+
+  const maxTiles = 10;
+
+  // ⛑ fallback letters if everything else fails
+  const fallbackLetters = ['A', 'E', 'I', 'O', 'U', 'S', 'T', 'R', 'L', 'N'];
+
+  final starterPickedParts = starterMissingParts.take(1).toList();
+  final starterGuaranteedLetters = starterPickedParts.expand((s) => s.split('')).toSet().toList();
+  List<String> keptGuaranteed = starterGuaranteedLetters.take(maxTiles).toList();
+
+  final pickedParts = missingParts.take(3).toList();
+  final guaranteedLetters = pickedParts.expand((s) => s.split('')).toSet().toList();
+  keptGuaranteed.addAll(
+      guaranteedLetters.take(maxTiles - keptGuaranteed.length).toList());
+
+  keptGuaranteed = keptGuaranteed.take(maxTiles).toList();
+
+  List<String> totalTiles;
+
+  if (keptGuaranteed.isEmpty) {
+    // ❗ Fallback if no candidates matched
+    totalTiles = fallbackLetters.take(maxTiles).toList();
+  } else if (keptGuaranteed.length < maxTiles) {
+    final fillerLetters = missingParts
+        .skip(pickedParts.length)
+        .expand((s) => s.split(''))
+        .where((ch) => !keptGuaranteed.contains(ch))
+        .toSet()
+        .toList();
+
+    fillerLetters.shuffle();
+
+    final remainingSlots = maxTiles - keptGuaranteed.length;
+    totalTiles = [
+      ...keptGuaranteed,
+      ...fillerLetters.take(remainingSlots),
+    ];
+  } else {
+    totalTiles = keptGuaranteed;
+  }
+
+  totalTiles.shuffle();
+
+  setState(() {
+    _availableTiles = totalTiles;
+  });
+}
+
+
+  Widget buildSplitText(String word, List<int> splitPoints) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: List.generate(splitPoints.length - 1, (i) {
@@ -114,8 +240,7 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
 
         return Expanded(
           flex: segment.length, // proportional space
-          child: Container(
-            color: Colors.primaries[(i + _startColorIndex) % Colors.primaries.length].shade300,
+          child: SizedBox(
             child: FittedBox(
                 fit: BoxFit.contain,
                 child: Text(
@@ -136,44 +261,92 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
-    print("Width of the screen: ${MediaQuery.of(context).size.width}");
-    print("Height of the screen: ${MediaQuery.of(context).size.height}");
+    final totalWidth = MediaQuery.of(context).size.width;
+    final height = MediaQuery.of(context).size.height;
+
+    final splitPoints = [0, ..._currentSplitIndexes, _currentWord.length];
+    final totalLetters = _currentWord.length;
+
+    double currentX = 0;
+
+    List<double> currentXs = [];
+
+    currentXs.add(0.0);
+
+    final List<double> charWidths = [];
+    for (int i = 0; i < splitPoints.length - 1; i++) {
+      _wordParts.add(_currentWord.substring(splitPoints[i], splitPoints[i + 1]));
+      final segmentLength = splitPoints[i + 1] - splitPoints[i];
+      final width = totalWidth * (segmentLength / totalLetters);
+      charWidths.add(width);
+      currentX += charWidths[i];
+      currentXs.add(currentX);
+    }
 
     return Scaffold(
-      body: Stack(
-        fit: StackFit.expand,
+      body: SizedBox.expand( // ✅ Ensures Stack has bounded constraints
+        child:Stack(
         children: [
-          _isLoading?
+          if (_isLoading)
           Container(
-            width: double.infinity,
-            height: double.infinity,
-            color: Colors.primaries[_currentColorsIndexes[0]].shade300,
-          ):
-          FadeTransition(
-            opacity: opacity,
-            child: SizedBox(
-              width: MediaQuery.of(context).size.width,
-              height: MediaQuery.of(context).size.height,
-              child:CustomPaint(
-                size: Size.infinite,
-                foregroundPainter: WordPainter(
-                  word: _currentWord,
-                  splitIndexes: _currentSplitIndexes,
-                  colorIndexes: _currentColorsIndexes,
-                ),
+            width:totalWidth,
+            height: height,
+            color: Colors.primaries[_startColorIndex%Colors.primaries.length].shade300,
+          ),
+          for (int i = 0; i < charWidths.length; i++)
+          if (!_isLoading)
+          Positioned(
+            left: currentXs[i]-1 <0? 0: currentXs[i]-1,
+            top: 0,
+            child: FadeTransition(
+              opacity: opacity,
+              child: Container(
+                width: currentXs[i] + charWidths[i] + 2>totalWidth? totalWidth - currentXs[i] + 1: charWidths[i] + 2,
+                height: height,
+                color: _phase == GamePhase.splitWord?
+                (Colors.primaries[(i>= _currentColorsIndexes.length?_currentColorsIndexes[_currentColorsIndexes.length-1]:_currentColorsIndexes[i]) % Colors.primaries.length].shade300)
+                :( Colors.primaries[(i>= _prevColorsIndexes.length?_prevColorsIndexes[_prevColorsIndexes.length-1]:_prevColorsIndexes[i]) % Colors.primaries.length].shade300)
               )
             )
           ),
           if (!_isLoading)
-          FadeTransition(
-            opacity: opacity,
+            FadeTransition(
+              opacity: opacity,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(20),
+                      width:totalWidth,
+                      height: height,
+                      child: buildSplitText(_currentWord, splitPoints),
+                    )
+                  ),SizedBox(height:180)
+                ],
+              )
+            ),
+          if((_phase == GamePhase.startSplit || _phase==GamePhase.splitting || _phase==GamePhase.splitWord) && !_isLoading)
+          (_leftSideHidden?
+          Positioned(
+            left: 0,
+            top: 0,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 333),
+              width: _phase==GamePhase.startSplit?0:charWidths[0]+2,
+              height: height,
+              color: Colors.primaries[_currentColorsIndexes[0]%Colors.primaries.length].shade300,
+            ),
+          ):
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 333),
+            right: _phase==GamePhase.startSplit?-charWidths.last-1:0,
+            top: 0,
             child: Container(
-              padding: const EdgeInsets.all(20),
-              width: double.infinity,
-              height: double.infinity,
-              child: buildSplitText(_currentWord, _currentSplitIndexes),
-            )
-          ),
+              width: charWidths.last+2,
+              height: height,
+              color: Colors.primaries[_currentColorsIndexes.last%Colors.primaries.length].shade300,
+            ),
+          )),
           Column(
             mainAxisAlignment: MainAxisAlignment.start,
             children: <Widget>[
@@ -229,72 +402,70 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
                 ),
               ),
               Expanded(child: SizedBox()),
-              // Future tiles or input UI goes here
             ],
           ),
+          if (_phase == GamePhase.splitWord && _availableTiles.isNotEmpty)
+            SwipePathTyper(
+              tiles: _availableTiles,
+              columnCount: 5,
+              simpleTapMode: false,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              horizontalTileSpacing: 12,
+              verticalTileSpacing: 12,
+              tileBuilder: (context, letter, isSelected) => TileButton(
+                letter: letter,
+                isSelected: isSelected,
+              ),
+              swipeTrailColor: Colors.black87,
+              swipeTrailStrokeWidth: 8.0,
+              onWordCompleted: (word) {
+                // Optional: handle the completed word (score, validation, etc)
+                print("User swiped/tapped: $word");
+              },
+            ),
         ],
-      ),
+      )),
     );
   }
 }
 
-class WordPainter extends CustomPainter {
-  final String? word;
-  final List<int> splitIndexes;
-  final List<int> colorIndexes;
-  final Paint _paint = Paint();
 
-  WordPainter({
-    required this.word,
-    required this.splitIndexes,
-    required this.colorIndexes,
+class TileButton extends StatelessWidget {
+  final String letter;
+  final bool isSelected;
+
+  const TileButton({
+    super.key,
+    required this.letter,
+    this.isSelected = false,
   });
 
-  bool listEquals<T>(List<T> a, List<T> b) {
-    if (a.length != b.length) return false;
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
-  }
-
   @override
-  bool shouldRepaint(covariant WordPainter oldDelegate) {
-    return !listEquals(splitIndexes, oldDelegate.splitIndexes);
+  Widget build(BuildContext context) {
+    final themeColor = Colors.black;
+
+    return AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.all(8),
+        margin: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: isSelected ? Color.fromARGB(255, 54, 129, 121) : Color(0xFF4DB6AC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: themeColor,
+            width: 4,
+          ),
+        ),
+        child: Text(
+          letter.toUpperCase(),
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: "SpaceMono",
+            fontSize: 36,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
+          ),
+        ),
+    );
   }
-
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final totalWidth = size.width-0.1;
-    final height = size.height-0.1;
-
-    if (word == null || word!.isEmpty) return; // No word to draw
-
-    print("Size width: ${size.width}, Size height: ${size.height}, Word: $word, SplitIndexes: $splitIndexes, ColorIndexes: $colorIndexes");
-
-    final splitPoints = [0, ...splitIndexes, word!.length];
-    final totalLetters = word!.length;
-
-    double currentX = 0;
-
-    final List<double> charWidths = [];
-    for (int i = 0; i < splitPoints.length - 1; i++) {
-      final segmentLength = splitPoints[i + 1] - splitPoints[i];
-      if (segmentLength <= 0) return; // Invalid segment
-      final width = totalWidth * (segmentLength / totalLetters);
-      charWidths.add(width);
-    }
-
-    for (int i = 0; i < charWidths.length; i++) {
-      _paint.color = colorIndexes.isEmpty? Colors.primaries[0]: Colors.primaries[(i>= colorIndexes.length?colorIndexes[colorIndexes.length-1]:colorIndexes[i]) % Colors.primaries.length].shade300;
-
-      double realCurrentX = currentX-1<=0? 0: currentX-1;
-
-
-      canvas.drawRect(Rect.fromLTWH(realCurrentX, 0, realCurrentX+ charWidths[i]+2>=totalWidth? totalWidth-realCurrentX: charWidths[i]+2, height), _paint);
-      currentX += charWidths[i];
-    }
-  }
-
 }

@@ -20,19 +20,16 @@ amen
 amour
 ample
 amply
-anal
 anger
 angle
 anion
 ante
-anus
 apple
 apse
 arch
 aria
 arid
 arrow
-arse
 arty
 ashe
 aster
@@ -106,7 +103,6 @@ billy
 bind
 binge
 bipe
-bitch
 bite
 bitty
 bland
@@ -183,7 +179,6 @@ bush
 busk
 buss
 bust
-busty
 butter
 cabby
 cable
@@ -234,7 +229,6 @@ clout
 clue
 coat
 cobs
-cock
 code
 coil
 coin
@@ -250,7 +244,6 @@ cone
 conk
 cook
 cool
-coon
 coop
 coot
 cope
@@ -273,7 +266,6 @@ cowl
 crag
 cram
 crank
-crap
 crate
 creed
 cress
@@ -287,7 +279,6 @@ crush
 cuff
 cull
 cult
-cunt
 cure
 curry
 curt
@@ -325,7 +316,6 @@ dent
 deter
 dial
 dice
-dick
 dicky
 dike
 dill
@@ -391,7 +381,6 @@ duet
 duff
 dull
 dumb
-dummy
 dump
 dumpy
 dune
@@ -436,10 +425,8 @@ fall
 fame
 fancy
 fang
-fanny
 fare
 farm
-fart
 fast
 fate
 fatty
@@ -512,7 +499,6 @@ free
 fret
 frier
 frill
-fuck
 fuel
 full
 fume
@@ -569,7 +555,6 @@ gold
 gong
 good
 goof
-gook
 goon
 goop
 goose
@@ -640,7 +625,6 @@ heck
 heed
 heel
 heft
-hell
 herb
 here
 hick
@@ -680,7 +664,6 @@ huff
 huge
 hula
 hull
-hump
 hunch
 hung
 hunk
@@ -723,7 +706,6 @@ josh
 jowl
 jump
 junk
-junky
 jury
 just
 jute
@@ -734,8 +716,6 @@ keen
 keep
 kerb
 kick
-kike
-kill
 kilt
 kind
 king
@@ -780,7 +760,6 @@ lean
 lease
 least
 leave
-lech
 leek
 leer
 left
@@ -815,7 +794,6 @@ lobe
 loch
 lock
 lode
-loin
 loll
 lone
 long
@@ -846,9 +824,7 @@ lunch
 lung
 lure
 lush
-lust
 luster
-lusty
 lute
 mace
 mack
@@ -945,7 +921,6 @@ mouse
 move
 much
 muck
-muff
 mule
 mull
 mump
@@ -988,7 +963,6 @@ nose
 nosh
 note
 nous
-nude
 null
 numb
 oath
@@ -1007,8 +981,6 @@ onto
 onus
 open
 opus
-oral
-orgy
 ouch
 oust
 oval
@@ -1043,14 +1015,12 @@ pass
 passe
 past
 paste
-pasty
 patch
 pate
 pater
 path
 patty
 pave
-pawn
 payer
 peach
 peak
@@ -1079,14 +1049,12 @@ pier
 pike
 pile
 pill
-pimp
 pinch
 pine
 ping
 pink
 pint
 pipe
-piss
 pitch
 pith
 pity
@@ -1108,19 +1076,16 @@ pong
 pony
 poof
 pool
-poop
 poor
 pope
 poppy
 pore
 pork
-porn
 port
 pose
 posh
 poss
 post
-potty
 pouch
 pound
 pour
@@ -1131,7 +1096,6 @@ prat
 prate
 pray
 press
-prick
 pride
 prise
 prop
@@ -1146,11 +1110,9 @@ punk
 punt
 pure
 push
-puss
 quit
 race
 rack
-racy
 raft
 rage
 raid
@@ -1164,7 +1126,6 @@ rang
 range
 rank
 rant
-rape
 rare
 rarer
 rash
@@ -1234,7 +1195,6 @@ rude
 ruff
 rule
 rummy
-rump
 rune
 rung
 runny
@@ -1329,9 +1289,7 @@ sort
 sound
 soup
 sour
-souse
 spend
-spic
 spin
 spire
 spit
@@ -1348,7 +1306,6 @@ sting
 stop
 story
 such
-suck
 suet
 suit
 sully
@@ -1393,7 +1350,6 @@ teal
 team
 tear
 tease
-teat
 tech
 teed
 teen
@@ -1427,11 +1383,9 @@ tint
 tiny
 tire
 titch
-titty
 toad
 toff
 toil
-toke
 toll
 tomb
 tome
@@ -1474,7 +1428,6 @@ tuck
 tune
 tunny
 turn
-tush
 tusk
 under
 union
@@ -1526,7 +1479,6 @@ wallow
 wally
 wand
 wane
-wank
 wanly
 want
 ward
@@ -1546,7 +1498,6 @@ weal
 wean
 wear
 weave
-weed
 weedy
 week
 weep
@@ -1567,7 +1518,6 @@ wife
 wild
 wile
 will
-willy
 wilt
 wily
 wimp
@@ -1588,7 +1538,6 @@ witch
 with
 witty
 wold
-womb
 wonk
 wood
 woof

@@ -13,6 +13,7 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
   auto_size_text: ^3.0.0
+  swipe_path_typer: ^1.0.5
 
 
 dev_dependencies:
