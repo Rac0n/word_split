@@ -188,10 +188,10 @@ packages:
     dependency: "direct main"
     description:
       name: swipe_path_typer
-      sha256: "085c0c055935b338db5bc5d710a80f5fbf6438172f52a16c83bcec25e951f240"
+      sha256: "91bb50f2f50c5796c9515d81744dc8fc50fb46a5831361db5c5307a7343835aa"
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.5"
+    version: "1.1.2"
   term_glyph:
     dependency: transitive
     description:

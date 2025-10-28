@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -13,6 +14,7 @@ enum GamePhase {
   splitting,    // Phase 2: split process and animation
   splitWord,    // Phase 3: split view, one side hidden
   formedWord,   // Phase 4: new word formed
+  gameOver,     // Final Game Phase: game over
 }
 
 
@@ -38,8 +40,11 @@ class GamePage extends StatefulWidget {
 
 class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin {
   final Duration _turnDuration = const Duration(seconds: 60);
+  final Duration _validateDuration = const Duration(milliseconds: 800);
+  final Duration _resetWordDuration = const Duration(milliseconds: 3333);
   final int _score = 0;
   String _currentWord = "";
+  String _newWord = "";
   final List<String> _wordParts = [""];
   final List<int> _currentSplitIndexes = [0];
   int _currentTurn = 0;
@@ -52,6 +57,8 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
   List<String> _allValidWords = [];  // Loaded from english_cleaned.txt
   List<String> _availableTiles = [];
 
+  bool _firstLetterSelected = false;
+
   final List<String> _previousWords = [];
 
   late final AnimationController _controller;
@@ -59,6 +66,8 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
 
   GamePhase _phase = GamePhase.starting;
 
+  Timer? _validationTimer;
+  Timer? _resetWordTimer;
 
   @override
   void initState() {
@@ -89,12 +98,12 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
 
   Future<void> _loadStarterWords() async {
     final content = await rootBundle.loadString('assets/word_lists/starter_answers.txt');
-    _allStarterWords = content.split('\n').map((e) => e.trim()).where((w) => w.length > 2).toList();
+    _allStarterWords = content.split('\n').map((e) => e.toLowerCase().trim()).where((w) => w.length > 2).toList();
   }
 
   Future<void> _loadValidWords() async {
     final content = await rootBundle.loadString('assets/word_lists/english_cleaned.txt');
-    _allValidWords = content.split('\n').map((e) => e.trim()).where((w) => w.length > 2).toList();
+    _allValidWords = content.split('\n').map((e) => e.toLowerCase().trim()).where((w) => w.length > 2).toList();
   }
 
   Future<void> _initializeGame() async {
@@ -106,6 +115,9 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
     _currentWord = _allStarterWords[random.nextInt(_allStarterWords.length)];
 
     _previousWords.add(_currentWord);
+    if (_previousWords.length > 10) {
+      _previousWords.removeAt(0);
+    }
 
     _controller.forward(from: 0.0);
     setState(() {
@@ -150,113 +162,97 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
     });
   }
   
-void _generateTiles() async {
-  final visiblePart = _leftSideHidden
-      ? _currentWord.substring(_currentSplitIndexes[0])
-      : _currentWord.substring(0, _currentSplitIndexes[0]);
+  void _generateTiles() async {
+    final visiblePart = _leftSideHidden
+        ? _currentWord.substring(_currentSplitIndexes[0])
+        : _currentWord.substring(0, _currentSplitIndexes[0]);
 
-  final starterCandidates = _allStarterWords.where((word) {
-    if (_previousWords.contains(word)) return false;
-    return _leftSideHidden ? word.endsWith(visiblePart) : word.startsWith(visiblePart);
-  }).toList();
+    final starterCandidates = _allStarterWords.where((word) {
+      if (_previousWords.contains(word)) return false;
+      return _leftSideHidden ? word.endsWith(visiblePart) : word.startsWith(visiblePart);
+    }).toList();
 
-  final candidates = _allValidWords.where((word) {
-    if (_previousWords.contains(word)) return false;
-    return _leftSideHidden ? word.endsWith(visiblePart) : word.startsWith(visiblePart);
-  }).toList();
+    final candidates = _allValidWords.where((word) {
+      if (_previousWords.contains(word)) return false;
+      return _leftSideHidden ? word.endsWith(visiblePart) : word.startsWith(visiblePart);
+    }).toList();
 
-  final starterMissingParts = starterCandidates
-      .map((w) => _leftSideHidden
-          ? w.substring(0, w.length - visiblePart.length)
-          : w.substring(visiblePart.length))
-      .where((s) => s.isNotEmpty)
-      .toSet()
-      .toList();
-
-  final missingParts = candidates
-      .map((w) => _leftSideHidden
-          ? w.substring(0, w.length - visiblePart.length)
-          : w.substring(visiblePart.length))
-      .where((s) => s.isNotEmpty)
-      .toSet()
-      .toList();
-
-  starterMissingParts.shuffle();
-  missingParts.shuffle();
-
-  const maxTiles = 10;
-
-  // ⛑ fallback letters if everything else fails
-  const fallbackLetters = ['A', 'E', 'I', 'O', 'U', 'S', 'T', 'R', 'L', 'N'];
-
-  final starterPickedParts = starterMissingParts.take(1).toList();
-  final starterGuaranteedLetters = starterPickedParts.expand((s) => s.split('')).toSet().toList();
-  List<String> keptGuaranteed = starterGuaranteedLetters.take(maxTiles).toList();
-
-  final pickedParts = missingParts.take(3).toList();
-  final guaranteedLetters = pickedParts.expand((s) => s.split('')).toSet().toList();
-  keptGuaranteed.addAll(
-      guaranteedLetters.take(maxTiles - keptGuaranteed.length).toList());
-
-  keptGuaranteed = keptGuaranteed.take(maxTiles).toList();
-
-  List<String> totalTiles;
-
-  if (keptGuaranteed.isEmpty) {
-    // ❗ Fallback if no candidates matched
-    totalTiles = fallbackLetters.take(maxTiles).toList();
-  } else if (keptGuaranteed.length < maxTiles) {
-    final fillerLetters = missingParts
-        .skip(pickedParts.length)
-        .expand((s) => s.split(''))
-        .where((ch) => !keptGuaranteed.contains(ch))
+    final starterMissingParts = starterCandidates
+        .map((w) => _leftSideHidden
+            ? w.substring(0, w.length - visiblePart.length)
+            : w.substring(visiblePart.length))
+        .where((s) => s.isNotEmpty)
         .toSet()
         .toList();
 
-    fillerLetters.shuffle();
+    final missingParts = candidates
+        .map((w) => _leftSideHidden
+            ? w.substring(0, w.length - visiblePart.length)
+            : w.substring(visiblePart.length))
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList();
 
-    final remainingSlots = maxTiles - keptGuaranteed.length;
-    totalTiles = [
-      ...keptGuaranteed,
-      ...fillerLetters.take(remainingSlots),
-    ];
-  } else {
-    totalTiles = keptGuaranteed;
-  }
+    starterMissingParts.shuffle();
+    missingParts.shuffle();
 
-  totalTiles.shuffle();
+    const maxTiles = 10;
 
-  setState(() {
-    _availableTiles = totalTiles;
-  });
-}
+    // ⛑ fallback letters if everything else fails
+    List<String> fallbackLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
 
+    final starterPickedParts = starterMissingParts.take(1).toList();
+    final starterGuaranteedLetters = starterPickedParts.expand((s) => s.split('')).toSet().toList();
+    List<String> keptGuaranteed = starterGuaranteedLetters.take(maxTiles).toList();
 
-  Widget buildSplitText(String word, List<int> splitPoints) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: List.generate(splitPoints.length - 1, (i) {
-        final segment = word.substring(splitPoints[i], splitPoints[i + 1]);
+    final pickedParts = missingParts.take(3).toList();
+    final guaranteedLetters = pickedParts.expand((s) => s.split('')).toSet().toList();
+    keptGuaranteed.addAll(
+        guaranteedLetters.take(maxTiles - keptGuaranteed.length).toList());
 
-        return Expanded(
-          flex: segment.length, // proportional space
-          child: SizedBox(
-            child: FittedBox(
-                fit: BoxFit.contain,
-                child: Text(
-                  segment,
-                  style: const TextStyle(
-                    fontFamily: "SpaceMono",
-                    fontSize: 100,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
-                  ),
-                ),
-              ),
-          ),
-        );
-      }),
-    );
+    keptGuaranteed = keptGuaranteed.take(maxTiles).toList();
+
+    List<String> totalTiles = List.empty(growable: true);
+
+    if (keptGuaranteed.isEmpty) {
+      // ❗ Fallback if no candidates matched
+      totalTiles = fallbackLetters.take(maxTiles).toList();
+    } else if (keptGuaranteed.length < maxTiles) {
+      final fillerLetters = missingParts
+          .skip(pickedParts.length)
+          .expand((s) => s.split(''))
+          .where((ch) => !keptGuaranteed.contains(ch))
+          .toSet()
+          .toList();
+
+      fillerLetters.shuffle();
+
+      final remainingSlots = maxTiles - keptGuaranteed.length;
+      totalTiles = [
+        ...keptGuaranteed,
+        ...fillerLetters.take(remainingSlots),
+      ];
+    } else {
+      totalTiles = keptGuaranteed;
+    }
+
+    // Remove duplicates
+    totalTiles = totalTiles.toSet().toList();
+
+    // If fewer than 10 left, add random filler letters until we reach maxTiles
+    while (totalTiles.length < maxTiles) {
+      final randomLetter = (fallbackLetters..shuffle()).first;
+      if (!totalTiles.contains(randomLetter)) {
+        totalTiles.add(randomLetter);
+      }
+    }
+
+    totalTiles.shuffle();
+
+    setState(() {
+      _availableTiles = totalTiles.take(maxTiles).toList();
+    });
+
   }
 
   @override
@@ -272,6 +268,8 @@ void _generateTiles() async {
     List<double> currentXs = [];
 
     currentXs.add(0.0);
+
+    _wordParts.clear();
 
     final List<double> charWidths = [];
     for (int i = 0; i < splitPoints.length - 1; i++) {
@@ -309,36 +307,45 @@ void _generateTiles() async {
               )
             )
           ),
-          if (!_isLoading)
-            FadeTransition(
+          for (int i = 0; i < charWidths.length; i++)
+          if (!_isLoading && (_phase != GamePhase.splitWord || (_phase == GamePhase.splitWord && (_leftSideHidden?(i!=0):(i!=charWidths.length-1)))))
+          Positioned(
+            left: currentXs[i]-1 <0? 0: currentXs[i]-1,
+            top: 0,
+            child: FadeTransition(
               opacity: opacity,
-              child: Column(
-                children: [
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.all(20),
-                      width:totalWidth,
-                      height: height,
-                      child: buildSplitText(_currentWord, splitPoints),
-                    )
-                  ),SizedBox(height:180)
-                ],
+              child: SizedBox(
+                width: currentXs[i] + charWidths[i] + 2>totalWidth? totalWidth - currentXs[i] + 1: charWidths[i] + 2,
+                height: height*0.66,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: Text(
+                    _currentWord.substring(splitPoints[i], splitPoints[i + 1]),
+                    style: const TextStyle(
+                      fontFamily: "SpaceMono",
+                      fontSize: 100,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
               )
-            ),
+            )
+          ),
           if((_phase == GamePhase.startSplit || _phase==GamePhase.splitting || _phase==GamePhase.splitWord) && !_isLoading)
           (_leftSideHidden?
           Positioned(
             left: 0,
             top: 0,
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 333),
+              duration: const Duration(milliseconds: 222),
               width: _phase==GamePhase.startSplit?0:charWidths[0]+2,
               height: height,
               color: Colors.primaries[_currentColorsIndexes[0]%Colors.primaries.length].shade300,
             ),
           ):
           AnimatedPositioned(
-            duration: const Duration(milliseconds: 333),
+            duration: const Duration(milliseconds: 222),
             right: _phase==GamePhase.startSplit?-charWidths.last-1:0,
             top: 0,
             child: Container(
@@ -347,6 +354,32 @@ void _generateTiles() async {
               color: Colors.primaries[_currentColorsIndexes.last%Colors.primaries.length].shade300,
             ),
           )),
+          for (int i = 0; i < charWidths.length; i++)
+          if (!_isLoading && _phase == GamePhase.splitWord && (_leftSideHidden?(i==0):(i==charWidths.length-1)))
+          Positioned(
+            left: currentXs[i]-1 <0? 0: currentXs[i]-1,
+            top: 0,
+            child: FadeTransition(
+              opacity: opacity,
+              child: SizedBox(
+                width: currentXs[i] + charWidths[i] + 2>totalWidth? totalWidth - currentXs[i] + 1: charWidths[i] + 2,
+                height: height*0.66,
+                child: FittedBox(
+                  alignment: _leftSideHidden ? Alignment.centerRight : Alignment.centerLeft,
+                  fit: BoxFit.contain,
+                  child: Text(
+                    _newWord,
+                    style: const TextStyle(
+                      fontFamily: "SpaceMono",
+                      fontSize: 100,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
+              )
+            )
+          ),
           Column(
             mainAxisAlignment: MainAxisAlignment.start,
             children: <Widget>[
@@ -405,7 +438,10 @@ void _generateTiles() async {
             ],
           ),
           if (_phase == GamePhase.splitWord && _availableTiles.isNotEmpty)
-            SwipePathTyper(
+            SizedBox(
+              width: totalWidth,
+              height: height,
+            child: SwipePathTyper(
               tiles: _availableTiles,
               columnCount: 5,
               simpleTapMode: false,
@@ -418,11 +454,72 @@ void _generateTiles() async {
               ),
               swipeTrailColor: Colors.black87,
               swipeTrailStrokeWidth: 8.0,
-              onWordCompleted: (word) {
+              onLetterSelected: (letter) {
+                setState(() {
+                  if(!_firstLetterSelected){
+                    _firstLetterSelected = true;
+                    _newWord +=letter;
+                  }
+                  else {
+                    _newWord +=letter;
+                  }
+                  _newWord = _newWord.toLowerCase().trim();
+                });
+                // Optional: handle letter selection (e.g., update UI)
+                print("Letter selected: $letter");
+              },
+              onSwipeCompleted: (word) {
                 // Optional: handle the completed word (score, validation, etc)
                 print("User swiped/tapped: $word");
+                String visiblePart = _leftSideHidden ? _currentWord.substring(_currentSplitIndexes[0]) : _currentWord.substring(0, _currentSplitIndexes[0]);
+                print("Current visible part: $visiblePart");
+                print(_currentColorsIndexes.toString());
+                print("Current split indexes: $_currentSplitIndexes");
+
+                if (_validationTimer != null && _validationTimer!.isActive) {
+                  _validationTimer!.cancel();
+                }
+                _validationTimer = Timer(_validateDuration, () {
+                  if (_currentWord.isNotEmpty && _newWord.isNotEmpty) {
+                    String formedWord = _leftSideHidden ? _newWord + visiblePart : visiblePart + _newWord;
+                    _firstLetterSelected = false;
+                    if (_allValidWords.contains(formedWord) && !_previousWords.contains(formedWord)) {
+                      setState(() {
+                        _previousWords.add(formedWord);
+                        if (_previousWords.length > 10) {
+                          _previousWords.removeAt(0);
+                        }
+                        _phase = GamePhase.formedWord;
+                      });
+                      Future.delayed(const Duration(milliseconds: 800), () {
+                        // _initializeGame();
+                      });
+                    }
+                    else if (_previousWords.contains(formedWord)) {
+                      // Already used word feedback
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Word was already used recently: $formedWord'),
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    }
+                  }
+                });
+
+                if (_resetWordTimer != null && _resetWordTimer!.isActive) {
+                  _resetWordTimer!.cancel();
+                }
+                _resetWordTimer = Timer(_resetWordDuration, () {
+                  setState(() {
+                    _newWord = "";
+                    _currentWord = _previousWords.isNotEmpty ? _previousWords.last : _currentWord;
+                    _phase = GamePhase.splitWord;
+                  });
+                });
               },
             ),
+          )
         ],
       )),
     );
