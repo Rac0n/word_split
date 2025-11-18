@@ -42,6 +42,9 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
   final Duration _turnDuration = const Duration(seconds: 60);
   final Duration _validateDuration = const Duration(milliseconds: 800);
   final Duration _resetWordDuration = const Duration(milliseconds: 3333);
+
+  int _formedWordAnimation = 0;
+
   final int _score = 0;
   String _currentWord = "";
   String _newWord = "";
@@ -321,11 +324,11 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
                   fit: BoxFit.contain,
                   child: Text(
                     _currentWord.substring(splitPoints[i], splitPoints[i + 1]),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: "SpaceMono",
                       fontSize: 100,
                       fontWeight: FontWeight.bold,
-                      color: Colors.black,
+                      color: _phase == GamePhase.formedWord ? (_formedWordAnimation %2 == 1 ? Colors.black : Colors.white) : Colors.black,
                     ),
                   ),
                 ),
@@ -369,11 +372,11 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
                   fit: BoxFit.contain,
                   child: Text(
                     _newWord,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: "SpaceMono",
                       fontSize: 100,
                       fontWeight: FontWeight.bold,
-                      color: Colors.black,
+                      color: _phase == GamePhase.formedWord ? (_formedWordAnimation %2 == 1 ? Colors.black : Colors.white) : Colors.black,
                     ),
                   ),
                 ),
@@ -491,8 +494,23 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
                         }
                         _phase = GamePhase.formedWord;
                       });
-                      Future.delayed(const Duration(milliseconds: 800), () {
-                        // _initializeGame();
+                      Future.delayed(const Duration(milliseconds: 650), () {
+                        setState(() {
+                          _formedWordAnimation += 1;
+                          print("_formedWordAnimation value: $_formedWordAnimation, current time: ${DateTime.now()}");
+                        });
+                      });
+                      Future.delayed(const Duration(milliseconds: 1000), () {
+                        setState(() {
+                          _formedWordAnimation += 1;
+                          print("_formedWordAnimation value: $_formedWordAnimation, current time: ${DateTime.now()}");
+                        });
+                      });
+                      Future.delayed(const Duration(milliseconds: 500), () {
+                        setState(() {
+                          _formedWordAnimation += 1;
+                          print("_formedWordAnimation value: $_formedWordAnimation, current time: ${DateTime.now()}");
+                        });
                       });
                     }
                     else if (_previousWords.contains(formedWord)) {
@@ -512,6 +530,7 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
                 }
                 _resetWordTimer = Timer(_resetWordDuration, () {
                   setState(() {
+                    _formedWordAnimation = 0;
                     _newWord = "";
                     _currentWord = _previousWords.isNotEmpty ? _previousWords.last : _currentWord;
                     _phase = GamePhase.splitWord;
