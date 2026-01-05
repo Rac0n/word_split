@@ -38,7 +38,7 @@ class GamePage extends StatefulWidget {
   State<GamePage> createState() => _GamePageState();
 }
 
-class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin {
+class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
   final Duration _turnDuration = const Duration(seconds: 60);
   final Duration _validateDuration = const Duration(milliseconds: 800);
   final Duration _resetWordDuration = const Duration(milliseconds: 3333);
@@ -63,6 +63,8 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
 
   late final AnimationController _controller;
   late final Animation<double> opacity;
+  late final AnimationController _highlightController;
+  late final Animation<double> highlightPosition;
 
   GamePhase _phase = GamePhase.starting;
 
@@ -80,6 +82,18 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
       CurvedAnimation(
         parent: _controller,
         curve: Curves.easeIn,
+      ),
+    );
+
+    _highlightController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+
+    highlightPosition = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _highlightController,
+        curve: Curves.easeInOut,
       ),
     );
     final random = Random();
@@ -256,6 +270,15 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
   }
 
   @override
+  void dispose() {
+    _controller.dispose();
+    _highlightController.dispose();
+    _validationTimer?.cancel();
+    _resetWordTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final totalWidth = MediaQuery.of(context).size.width;
     final height = MediaQuery.of(context).size.height;
@@ -291,6 +314,19 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
             height: height,
             color: Colors.primaries[_startColorIndex%Colors.primaries.length].shade300,
           ),
+          // Background for formed word - full screen single color
+          if (_phase == GamePhase.formedWord && !_isLoading)
+          Positioned(
+            left: 0,
+            top: 0,
+            child: Container(
+              width: totalWidth,
+              height: height,
+              color: Colors.primaries[_currentColorsIndexes[0] % Colors.primaries.length].shade300,
+            ),
+          ),
+          // Background color containers for split phases
+          if (_phase != GamePhase.formedWord)
           for (int i = 0; i < charWidths.length; i++)
           if (!_isLoading)
           Positioned(
@@ -307,6 +343,69 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
               )
             )
           ),
+          // When word is formed, show as one complete text with highlight
+          if (_phase == GamePhase.formedWord && !_isLoading)
+          Positioned(
+            left: 0,
+            top: 0,
+            child: FadeTransition(
+              opacity: opacity,
+              child: SizedBox(
+                width: totalWidth,
+                height: height * 0.66,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: AnimatedBuilder(
+                    animation: highlightPosition,
+                    builder: (context, child) {
+                      final sweepX = highlightPosition.value;
+                      final highlightWidth = 0.25; // Width of highlight beam (25% of screen)
+                      
+                      return ShaderMask(
+                        shaderCallback: (Rect bounds) {
+                          return LinearGradient(
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                            colors: [
+                              Colors.black,
+                              // Flickering effect at start
+                              if (sweepX < 0.2 && (sweepX * 30).floor() % 2 == 0)
+                                Colors.white
+                              else
+                                Colors.black,
+                              // Main sweep highlight
+                              Colors.black,
+                              Colors.white,
+                              Colors.black,
+                            ],
+                            stops: [
+                              0.0,
+                              0.2,
+                              (sweepX - highlightWidth / 2).clamp(0.0, 0.99),
+                              sweepX.clamp(0.01, 1.0),
+                              (sweepX + highlightWidth / 2).clamp(0.01, 1.0),
+                            ],
+                          ).createShader(bounds);
+                        },
+                        blendMode: BlendMode.srcIn,
+                        child: Text(
+                          _currentWord,
+                          style: const TextStyle(
+                            fontFamily: "SpaceMono",
+                            fontSize: 100,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Split text parts only shown in other phases
+          if (_phase != GamePhase.formedWord)
           for (int i = 0; i < charWidths.length; i++)
           if (!_isLoading && (_phase != GamePhase.splitWord || (_phase == GamePhase.splitWord && (_leftSideHidden?(i!=0):(i!=charWidths.length-1)))))
           Positioned(
@@ -491,6 +590,7 @@ class _GamePageState extends State<GamePage> with SingleTickerProviderStateMixin
                         }
                         _phase = GamePhase.formedWord;
                       });
+                      _highlightController.forward(from: 0.0);
                       Future.delayed(const Duration(milliseconds: 800), () {
                         // _initializeGame();
                       });
