@@ -10,10 +10,11 @@ void main() {
 
 enum GamePhase {
   starting,     // Phase 1: full word, full canvas
-  startSplit,    // Phase 2: split process and animation
-  splitting,    // Phase 2: split process and animation
-  splitWord,    // Phase 3: split view, one side hidden
-  formedWord,   // Phase 4: new word formed
+  startSplit,    // Phase 2: start of the split process
+  splitting,    // Phase 3: split process and animation
+  splitWord,    // Phase 4: split view, one side hidden
+  merging,      // Phase 5: Merge the two parts of the new word
+  formedWord,   // Phase 6: new word formed
   gameOver,     // Final Game Phase: game over
 }
 
@@ -39,28 +40,48 @@ class GamePage extends StatefulWidget {
 }
 
 class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
+  // The duration a player has to find a word (starts with the new split, or the first split)
   final Duration _turnDuration = const Duration(seconds: 60);
+  // The duration after which a word is checked whether it is right or wrong (fired after every completion)
   final Duration _validateDuration = const Duration(milliseconds: 800);
-  final Duration _resetWordDuration = const Duration(milliseconds: 3333);
+  // The duration after which a word is reset when it is wrong (fired after every completion)
+  final Duration _resetWordDuration = const Duration(milliseconds: 3000);
+  // The player's score
   final int _score = 0;
+  // The current word that was split
   String _currentWord = "";
+  // The new word formed by the split word's part and what the player wrote
   String _newWord = "";
+  // The two different word parts
   final List<String> _wordParts = [""];
-  final List<int> _currentSplitIndexes = [0];
+  // The index where the current word was split
+  final int _currentSplitIndex = 0;
+  // The current turn number
   int _currentTurn = 0;
+  // Boolean about whether the app is loading or not
   bool _isLoading = true;
-  final List<int> _currentColorsIndexes = [0];
-  final List<int> _prevColorsIndexes = [0];
+  
+  // Boolean indicating which side of the word is hidden
   bool _leftSideHidden = false;
-  int _startColorIndex = 0;
+  // The index of the starting color
+  int _backgroundColorIndex = 0;
+  // The index of the split color
+  int _splitColorIndex = 0;
+
+  // List with all the possible starter words (easier and with more following word options)
   List<String> _allStarterWords = []; // Loaded from starter_answers.txt
+  // List with all possible valid words
   List<String> _allValidWords = [];  // Loaded from english_cleaned.txt
+  // List with all the tiles for writing a new word
   List<String> _availableTiles = [];
 
+  // Whether the first letter was selected or not
   bool _firstLetterSelected = false;
 
+  // A List of the previous words a player has found
   final List<String> _previousWords = [];
 
+  // Animation controllers
   late final AnimationController _controller;
   late final Animation<double> opacity;
   late final AnimationController _highlightController;
@@ -68,7 +89,9 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
 
   GamePhase _phase = GamePhase.starting;
 
+  // Timer used for the validation process
   Timer? _validationTimer;
+  // Timer used for the word reset process
   Timer? _resetWordTimer;
 
   @override
@@ -86,25 +109,20 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
     );
 
     _highlightController = AnimationController(
-      duration: const Duration(milliseconds: 800),
+      duration: const Duration(milliseconds: 1600),
       vsync: this,
     );
 
-    highlightPosition = Tween<double>(begin: 0.0, end: 1.0).animate(
+    highlightPosition = Tween<double>(begin: 0.0, end: 2.0).animate(
       CurvedAnimation(
         parent: _highlightController,
         curve: Curves.easeInOut,
       ),
     );
+
     final random = Random();
-
-    _currentColorsIndexes.clear();
-
-    _startColorIndex = random.nextInt(Colors.primaries.length);
-    _currentColorsIndexes.add(_startColorIndex);
-
-    _prevColorsIndexes.clear();
-    _prevColorsIndexes.add(_startColorIndex);
+    _backgroundColorIndex = random.nextInt(Colors.primaries.length);
+    _splitColorIndex = (_backgroundColorIndex+1)%Colors.primaries.length;
 
     _initializeGame();
     super.initState();
@@ -129,9 +147,6 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
     _currentWord = _allStarterWords[random.nextInt(_allStarterWords.length)];
 
     _previousWords.add(_currentWord);
-    if (_previousWords.length > 10) {
-      _previousWords.removeAt(0);
-    }
 
     _controller.forward(from: 0.0);
     setState(() {
@@ -140,26 +155,15 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
 
     await Future.delayed(const Duration(seconds: 2));
     _currentTurn += 1;
-
-    _currentSplitIndexes.clear();
   
     setState((){
       if (_currentWord.length == 3) {
-        _currentSplitIndexes.add(1 + random.nextInt(2));
+        _currentSplitIndex = 1 + random.nextInt(2);
       } else {
-        _currentSplitIndexes.add(2 + random.nextInt(_currentWord.length - 3));
+        _currentSplitIndex = 2 + random.nextInt(_currentWord.length - 3);
       }
 
       _leftSideHidden = random.nextBool();
-
-      _prevColorsIndexes.clear();
-      _prevColorsIndexes.addAll(_currentColorsIndexes);
-
-      if (_leftSideHidden) {
-        _currentColorsIndexes.insert(0, _startColorIndex+_currentTurn);
-      } else {
-        _currentColorsIndexes.add(_startColorIndex+_currentTurn);
-      }
 
       _phase = GamePhase.startSplit;
     });
@@ -169,7 +173,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
         _generateTiles();
       });
     });
-    Future.delayed(const Duration(milliseconds: 300), () {
+    Future.delayed(const Duration(milliseconds: 500), () {
       setState(() {
         _phase = GamePhase.splitWord;
       });
@@ -178,8 +182,8 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
   
   void _generateTiles() async {
     final visiblePart = _leftSideHidden
-        ? _currentWord.substring(_currentSplitIndexes[0])
-        : _currentWord.substring(0, _currentSplitIndexes[0]);
+        ? _currentWord.substring(_currentSplitIndex)
+        : _currentWord.substring(0, _currentSplitIndex);
 
     final starterCandidates = _allStarterWords.where((word) {
       if (_previousWords.contains(word)) return false;
@@ -283,75 +287,55 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
     final totalWidth = MediaQuery.of(context).size.width;
     final height = MediaQuery.of(context).size.height;
 
-    final splitPoints = [0, ..._currentSplitIndexes, _currentWord.length];
     final totalLetters = _currentWord.length;
-
-    double currentX = 0;
-
-    List<double> currentXs = [];
-
-    currentXs.add(0.0);
 
     _wordParts.clear();
 
     final List<double> charWidths = [];
-    for (int i = 0; i < splitPoints.length - 1; i++) {
-      _wordParts.add(_currentWord.substring(splitPoints[i], splitPoints[i + 1]));
-      final segmentLength = splitPoints[i + 1] - splitPoints[i];
-      final width = totalWidth * (segmentLength / totalLetters);
-      charWidths.add(width);
-      currentX += charWidths[i];
-      currentXs.add(currentX);
-    }
+    _wordParts.add(_currentWord.substring(0, _currentSplitIndex));
+    _wordParts.add(_currentWord.substring(_currentSplitIndex));
 
     return Scaffold(
       body: SizedBox.expand( // ✅ Ensures Stack has bounded constraints
         child:Stack(
         children: [
-          if (_isLoading)
           Container(
             width:totalWidth,
             height: height,
-            color: Colors.primaries[_startColorIndex%Colors.primaries.length].shade300,
+            color: Colors.primaries[_backgroundColorIndex].shade300,
           ),
-          // Background for formed word - full screen single color
-          if (_phase == GamePhase.formedWord && !_isLoading)
+          // Split Color
+          if ((_phase == GamePhase.splitting || _phase == GamePhase.splitWord || _phase == GamePhase.merging) && !_isLoading)
+          _leftSideHidden?
           Positioned(
             left: 0,
             top: 0,
-            child: Container(
-              width: totalWidth,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 500),
+              width: 20+(totalWidth-40)*_currentSplitIndex/totalLetters,
               height: height,
-              color: Colors.primaries[_currentColorsIndexes[0] % Colors.primaries.length].shade300,
+              color: Colors.primaries[_splitColorIndex].shade300,
             ),
-          ),
-          // Background color containers for split phases
-          if (_phase != GamePhase.formedWord)
-          for (int i = 0; i < charWidths.length; i++)
-          if (!_isLoading)
+          ):
           Positioned(
-            left: currentXs[i]-1 <0? 0: currentXs[i]-1,
+            left: 20+(totalWidth-40)*_currentSplitIndex/totalLetters,
             top: 0,
-            child: FadeTransition(
-              opacity: opacity,
-              child: Container(
-                width: currentXs[i] + charWidths[i] + 2>totalWidth? totalWidth - currentXs[i] + 1: charWidths[i] + 2,
-                height: height,
-                color: _phase == GamePhase.splitWord?
-                (Colors.primaries[(i>= _currentColorsIndexes.length?_currentColorsIndexes[_currentColorsIndexes.length-1]:_currentColorsIndexes[i]) % Colors.primaries.length].shade300)
-                :( Colors.primaries[(i>= _prevColorsIndexes.length?_prevColorsIndexes[_prevColorsIndexes.length-1]:_prevColorsIndexes[i]) % Colors.primaries.length].shade300)
-              )
-            )
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 500),
+              width: 20+(totalWidth-40)*(totalLetters - _currentSplitIndex)/totalLetters,
+              height: height,
+              color: Colors.primaries[_splitColorIndex].shade300,
+            ),
           ),
           // When word is formed, show as one complete text with highlight
           if (_phase == GamePhase.formedWord && !_isLoading)
           Positioned(
-            left: 0,
+            left: 20,
             top: 0,
             child: FadeTransition(
               opacity: opacity,
               child: SizedBox(
-                width: totalWidth,
+                width: totalWidth-40,
                 height: height * 0.66,
                 child: FittedBox(
                   fit: BoxFit.contain,
@@ -359,7 +343,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                     animation: highlightPosition,
                     builder: (context, child) {
                       final sweepX = highlightPosition.value;
-                      final highlightWidth = 0.25; // Width of highlight beam (25% of screen)
+                      const highlightWidth = 0.25; // Width of highlight beam (25% of screen)
                       
                       return ShaderMask(
                         shaderCallback: (Rect bounds) {
@@ -367,20 +351,18 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                             begin: Alignment.centerLeft,
                             end: Alignment.centerRight,
                             colors: [
-                              Colors.black,
-                              // Flickering effect at start
-                              if (sweepX < 0.2 && (sweepX * 30).floor() % 2 == 0)
-                                Colors.white
-                              else
-                                Colors.black,
                               // Main sweep highlight
-                              Colors.black,
+                              sweepX<1.2 || sweepX%0.4>0.2?
+                              Colors.black:
                               Colors.white,
-                              Colors.black,
+                              (sweepX>0.99 && sweepX<1.2) || (sweepX%0.4>0.2)?
+                              Colors.black:
+                              Colors.white,
+                              sweepX<1.2 || sweepX%0.4>0.2?
+                              Colors.black:
+                              Colors.white,
                             ],
                             stops: [
-                              0.0,
-                              0.2,
                               (sweepX - highlightWidth / 2).clamp(0.0, 0.99),
                               sweepX.clamp(0.01, 1.0),
                               (sweepX + highlightWidth / 2).clamp(0.01, 1.0),
@@ -389,7 +371,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                         },
                         blendMode: BlendMode.srcIn,
                         child: Text(
-                          _currentWord,
+                          _newWord,
                           style: const TextStyle(
                             fontFamily: "SpaceMono",
                             fontSize: 100,
@@ -486,10 +468,10 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Padding(
-                    padding: EdgeInsets.fromLTRB(20, 12, 6, 4),
+                    padding: const EdgeInsets.fromLTRB(20, 12, 6, 4),
                     child: Text(
                       'Score: $_score',
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                         color: Colors.black,
@@ -499,16 +481,16 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                   Row(
                     children: [
                       IconButton(
-                        icon: Icon(Icons.pause),
+                        icon: const Icon(Icons.pause),
                         iconSize: 28,
                         color: Colors.black,
                         onPressed: () {},
                       ),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       IconButton(
                         iconSize: 28,
                         color: Colors.black,
-                        icon: Icon(Icons.menu),
+                        icon: const Icon(Icons.menu),
                         onPressed: () {},
                       ),
                     ],
@@ -533,7 +515,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                   ),
                 ),
               ),
-              Expanded(child: SizedBox()),
+              const Expanded(child: SizedBox()),
             ],
           ),
           if (_phase == GamePhase.splitWord && _availableTiles.isNotEmpty)
@@ -600,7 +582,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text('Word was already used recently: $formedWord'),
-                          duration: Duration(seconds: 1),
+                          duration: const Duration(seconds: 1),
                         ),
                       );
                     }
@@ -639,14 +621,14 @@ class TileButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeColor = Colors.black;
+    const themeColor = Colors.black;
 
     return AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.all(8),
         margin: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: isSelected ? Color.fromARGB(255, 54, 129, 121) : Color(0xFF4DB6AC),
+          color: isSelected ? const Color.fromARGB(255, 54, 129, 121) : const Color(0xFF4DB6AC),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: themeColor,
@@ -656,7 +638,7 @@ class TileButton extends StatelessWidget {
         child: Text(
           letter.toUpperCase(),
           textAlign: TextAlign.center,
-          style: TextStyle(
+          style: const TextStyle(
             fontFamily: "SpaceMono",
             fontSize: 36,
             fontWeight: FontWeight.bold,
