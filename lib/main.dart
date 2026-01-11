@@ -13,6 +13,7 @@ enum GamePhase {
   startSplit,    // Phase 2: start of the split process
   splitting,    // Phase 3: split process and animation
   splitWord,    // Phase 4: split view, one side hidden
+  startMerging, // Phase 4.5: Merge starting phase
   merging,      // Phase 5: Merge the two parts of the new word
   formedWord,   // Phase 6: new word formed
   gameOver,     // Final Game Phase: game over
@@ -43,19 +44,24 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
   // The duration a player has to find a word (starts with the new split, or the first split)
   final Duration _turnDuration = const Duration(seconds: 60);
   // The duration after which a word is checked whether it is right or wrong (fired after every completion)
-  final Duration _validateDuration = const Duration(milliseconds: 800);
+  final Duration _validateDuration = const Duration(milliseconds: 650);
   // The duration after which a word is reset when it is wrong (fired after every completion)
-  final Duration _resetWordDuration = const Duration(milliseconds: 3000);
+  final Duration _resetWordDuration = const Duration(milliseconds: 2000);
+  
+  // Duration of the split animation
+  final Duration _splitDuration = const Duration(milliseconds: 300);
+  
   // The player's score
   final int _score = 0;
   // The current word that was split
   String _currentWord = "";
-  // The new word formed by the split word's part and what the player wrote
-  String _newWord = "";
-  // The two different word parts
-  final List<String> _wordParts = [""];
+  // The new word part that the player wrote
+  String _newWordPart = "";
+  // The vissible part of the current word after being cut
+  String visiblePart = "";
+  
   // The index where the current word was split
-  final int _currentSplitIndex = 0;
+  int _currentSplitIndex = 0;
   // The current turn number
   int _currentTurn = 0;
   // Boolean about whether the app is loading or not
@@ -74,9 +80,6 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
   List<String> _allValidWords = [];  // Loaded from english_cleaned.txt
   // List with all the tiles for writing a new word
   List<String> _availableTiles = [];
-
-  // Whether the first letter was selected or not
-  bool _firstLetterSelected = false;
 
   // A List of the previous words a player has found
   final List<String> _previousWords = [];
@@ -109,7 +112,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
     );
 
     _highlightController = AnimationController(
-      duration: const Duration(milliseconds: 1600),
+      duration: const Duration(milliseconds: 1300),
       vsync: this,
     );
 
@@ -122,7 +125,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
 
     final random = Random();
     _backgroundColorIndex = random.nextInt(Colors.primaries.length);
-    _splitColorIndex = (_backgroundColorIndex+1)%Colors.primaries.length;
+    _splitColorIndex = (_backgroundColorIndex+2)%Colors.primaries.length;
 
     _initializeGame();
     super.initState();
@@ -157,13 +160,23 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
     _currentTurn += 1;
   
     setState((){
+      int simpleRand = random.nextInt(2);
+      _leftSideHidden = random.nextBool();
+
       if (_currentWord.length == 3) {
-        _currentSplitIndex = 1 + random.nextInt(2);
+        _currentSplitIndex = 1 + simpleRand;
+      } else
+      if (_currentWord.length > 6) {
+        if (_leftSideHidden) {
+            _currentSplitIndex = 3;
+          } else {
+            _currentSplitIndex =_currentWord.length - 4;
+          }
       } else {
         _currentSplitIndex = 2 + random.nextInt(_currentWord.length - 3);
       }
-
-      _leftSideHidden = random.nextBool();
+      
+      visiblePart = _leftSideHidden ? _currentWord.substring(_currentSplitIndex) : _currentWord.substring(0, _currentSplitIndex);
 
       _phase = GamePhase.startSplit;
     });
@@ -173,7 +186,45 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
         _generateTiles();
       });
     });
-    Future.delayed(const Duration(milliseconds: 500), () {
+    Future.delayed(_splitDuration, () {
+      setState(() {
+        _phase = GamePhase.splitWord;
+      });
+    });
+  }
+
+  Future<void> _nextTurn(foundWord) async {
+    _currentWord = foundWord;
+    _currentTurn += 1;
+    final random = Random();
+    int simpleRand = random.nextInt(2);
+    _newWordPart = "";
+    setState((){
+      _leftSideHidden = !_leftSideHidden;
+      if (_currentWord.length == 3) {
+        _currentSplitIndex = 1 + simpleRand;
+      } else
+      if (_currentWord.length > 6) {
+        if (_leftSideHidden) {
+            _currentSplitIndex = 3;
+          } else {
+            _currentSplitIndex =_currentWord.length - 4;
+          }
+      } else {
+        _currentSplitIndex = 2 + random.nextInt(_currentWord.length - 3);
+      }
+
+      visiblePart = _leftSideHidden ? _currentWord.substring(_currentSplitIndex) : _currentWord.substring(0, _currentSplitIndex);
+
+      _phase = GamePhase.startSplit;
+    });
+    Future.delayed(const Duration(milliseconds: 100), () {
+      setState(() {
+        _phase = GamePhase.splitting;
+        _generateTiles();
+      });
+    });
+    Future.delayed(_splitDuration, () {
       setState(() {
         _phase = GamePhase.splitWord;
       });
@@ -181,10 +232,6 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
   }
   
   void _generateTiles() async {
-    final visiblePart = _leftSideHidden
-        ? _currentWord.substring(_currentSplitIndex)
-        : _currentWord.substring(0, _currentSplitIndex);
-
     final starterCandidates = _allStarterWords.where((word) {
       if (_previousWords.contains(word)) return false;
       return _leftSideHidden ? word.endsWith(visiblePart) : word.startsWith(visiblePart);
@@ -202,6 +249,11 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
         .where((s) => s.isNotEmpty)
         .toSet()
         .toList();
+
+    print("//////////// STARTER CANDIDATES");
+    print(starterCandidates);
+    print("//////////// CANDIDATES");
+    print(candidates);
 
     final missingParts = candidates
         .map((w) => _leftSideHidden
@@ -287,44 +339,159 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
     final totalWidth = MediaQuery.of(context).size.width;
     final height = MediaQuery.of(context).size.height;
 
-    final totalLetters = _currentWord.length;
-
-    _wordParts.clear();
-
-    final List<double> charWidths = [];
-    _wordParts.add(_currentWord.substring(0, _currentSplitIndex));
-    _wordParts.add(_currentWord.substring(_currentSplitIndex));
-
     return Scaffold(
       body: SizedBox.expand( // ✅ Ensures Stack has bounded constraints
         child:Stack(
         children: [
-          Container(
+          AnimatedContainer(
+            duration: const Duration(seconds: 1),
             width:totalWidth,
             height: height,
             color: Colors.primaries[_backgroundColorIndex].shade300,
           ),
-          // Split Color
-          if ((_phase == GamePhase.splitting || _phase == GamePhase.splitWord || _phase == GamePhase.merging) && !_isLoading)
-          _leftSideHidden?
+          // The word before it is split and after it is split (the famous previous-found or starting word)
+          if ((_phase == GamePhase.starting || _phase == GamePhase.startSplit || _phase == GamePhase.splitting || _phase == GamePhase.splitWord) && !_isLoading)
           Positioned(
-            left: 0,
+            left: 20,
+            top: 0,
+            child: FadeTransition(
+              opacity: opacity,
+              child: SizedBox(
+                width: totalWidth-40,
+                height: height * 0.66,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: Text(
+                    _currentWord,
+                    style: const TextStyle(
+                      fontFamily: "SpaceMono",
+                      fontSize: 100,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // The current word part needed for merging
+          if ((_phase == GamePhase.startMerging || _phase == GamePhase.merging) && !_isLoading)
+          _leftSideHidden == false?
+          Positioned(
+            left: -22,
             top: 0,
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 500),
-              width: 20+(totalWidth-40)*_currentSplitIndex/totalLetters,
+              alignment: Alignment.topRight,
+              duration: _splitDuration,
+              width: 42+(totalWidth-40)*_currentSplitIndex/(_currentWord.length),
               height: height,
-              color: Colors.primaries[_splitColorIndex].shade300,
+              color: Colors.primaries[_backgroundColorIndex].shade300,
+              child: Container(
+                margin: const EdgeInsets.only(left: 40),
+                width: 22+(totalWidth-40)*_currentSplitIndex/(_currentWord.length),
+                height: height*0.66,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: Text(
+                    visiblePart,
+                    style: const TextStyle(
+                      fontFamily: "SpaceMono",
+                      fontSize: 100,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                )
+              )
             ),
           ):
           Positioned(
-            left: 20+(totalWidth-40)*_currentSplitIndex/totalLetters,
+            right: -22,
             top: 0,
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 500),
-              width: 20+(totalWidth-40)*(totalLetters - _currentSplitIndex)/totalLetters,
+              alignment: Alignment.topLeft,
+              duration: _splitDuration,
+              width: 42+(totalWidth-40)*((_currentWord.length) - _currentSplitIndex)/(_currentWord.length),
+              height: height,
+              color: Colors.primaries[_backgroundColorIndex].shade300,
+              child: Container(
+                margin: const EdgeInsets.only(right: 40),
+                width: 22+(totalWidth-40)*((_currentWord.length) - _currentSplitIndex)/(_currentWord.length),
+                height: height*0.66,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: Text(
+                    visiblePart,
+                    style: const TextStyle(
+                      fontFamily: "SpaceMono",
+                      fontSize: 100,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                )
+              )
+            ),
+          ),
+          // Split Color
+          if ((_phase == GamePhase.splitting || _phase == GamePhase.splitWord || _phase == GamePhase.startMerging || _phase == GamePhase.merging || _phase == GamePhase.startSplit) && !_isLoading)
+          _leftSideHidden?
+          Positioned(
+            left: -22,
+            top: 0,
+            child: AnimatedContainer(
+              alignment: Alignment.topRight,
+              duration: _splitDuration,
+              width: _phase == GamePhase.startSplit? 21 : 42+(totalWidth-40)*_currentSplitIndex/(_currentWord.length),
               height: height,
               color: Colors.primaries[_splitColorIndex].shade300,
+              child: Container(
+                margin: EdgeInsets.only(left: _phase == GamePhase.startSplit? 0: 40),
+                width: _phase == GamePhase.startSplit? 1 : 22+(totalWidth-40)*_currentSplitIndex/(_currentWord.length),
+                height: height*0.66,
+                child: _phase == GamePhase.startSplit?
+                const SizedBox.expand() : FittedBox(
+                  fit: BoxFit.contain,
+                  child: Text(
+                    _newWordPart,
+                    style: const TextStyle(
+                      fontFamily: "SpaceMono",
+                      fontSize: 100,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                )
+              )
+            ),
+          ):
+          Positioned(
+            right: -22,
+            top: 0,
+            child: AnimatedContainer(
+              alignment: Alignment.topLeft,
+              duration: _splitDuration,
+              width: _phase == GamePhase.startSplit? 21 : 42+(totalWidth-40)*((_currentWord.length) - _currentSplitIndex)/(_currentWord.length),
+              height: height,
+              color: Colors.primaries[_splitColorIndex].shade300,
+              child: Container(
+                margin: EdgeInsets.only(right: _phase == GamePhase.startSplit? 0: 40),
+                width: _phase == GamePhase.startSplit? 1 : 22+(totalWidth-40)*((_currentWord.length) - _currentSplitIndex)/(_currentWord.length),
+                height: height*0.66,
+                child: _phase == GamePhase.startSplit?
+                const SizedBox.expand() : FittedBox(
+                  fit: BoxFit.contain,
+                  child: Text(
+                    _newWordPart,
+                    style: const TextStyle(
+                      fontFamily: "SpaceMono",
+                      fontSize: 100,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                )
+              )
             ),
           ),
           // When word is formed, show as one complete text with highlight
@@ -371,7 +538,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                         },
                         blendMode: BlendMode.srcIn,
                         child: Text(
-                          _newWord,
+                          _newWordPart,
                           style: const TextStyle(
                             fontFamily: "SpaceMono",
                             fontSize: 100,
@@ -385,81 +552,6 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                 ),
               ),
             ),
-          ),
-          // Split text parts only shown in other phases
-          if (_phase != GamePhase.formedWord)
-          for (int i = 0; i < charWidths.length; i++)
-          if (!_isLoading && (_phase != GamePhase.splitWord || (_phase == GamePhase.splitWord && (_leftSideHidden?(i!=0):(i!=charWidths.length-1)))))
-          Positioned(
-            left: currentXs[i]-1 <0? 0: currentXs[i]-1,
-            top: 0,
-            child: FadeTransition(
-              opacity: opacity,
-              child: SizedBox(
-                width: currentXs[i] + charWidths[i] + 2>totalWidth? totalWidth - currentXs[i] + 1: charWidths[i] + 2,
-                height: height*0.66,
-                child: FittedBox(
-                  fit: BoxFit.contain,
-                  child: Text(
-                    _currentWord.substring(splitPoints[i], splitPoints[i + 1]),
-                    style: const TextStyle(
-                      fontFamily: "SpaceMono",
-                      fontSize: 100,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
-                    ),
-                  ),
-                ),
-              )
-            )
-          ),
-          if((_phase == GamePhase.startSplit || _phase==GamePhase.splitting || _phase==GamePhase.splitWord) && !_isLoading)
-          (_leftSideHidden?
-          Positioned(
-            left: 0,
-            top: 0,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 222),
-              width: _phase==GamePhase.startSplit?0:charWidths[0]+2,
-              height: height,
-              color: Colors.primaries[_currentColorsIndexes[0]%Colors.primaries.length].shade300,
-            ),
-          ):
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 222),
-            right: _phase==GamePhase.startSplit?-charWidths.last-1:0,
-            top: 0,
-            child: Container(
-              width: charWidths.last+2,
-              height: height,
-              color: Colors.primaries[_currentColorsIndexes.last%Colors.primaries.length].shade300,
-            ),
-          )),
-          for (int i = 0; i < charWidths.length; i++)
-          if (!_isLoading && _phase == GamePhase.splitWord && (_leftSideHidden?(i==0):(i==charWidths.length-1)))
-          Positioned(
-            left: currentXs[i]-1 <0? 0: currentXs[i]-1,
-            top: 0,
-            child: FadeTransition(
-              opacity: opacity,
-              child: SizedBox(
-                width: currentXs[i] + charWidths[i] + 2>totalWidth? totalWidth - currentXs[i] + 1: charWidths[i] + 2,
-                height: height*0.66,
-                child: FittedBox(
-                  alignment: _leftSideHidden ? Alignment.centerRight : Alignment.centerLeft,
-                  fit: BoxFit.contain,
-                  child: Text(
-                    _newWord,
-                    style: const TextStyle(
-                      fontFamily: "SpaceMono",
-                      fontSize: 100,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
-                    ),
-                  ),
-                ),
-              )
-            )
           ),
           Column(
             mainAxisAlignment: MainAxisAlignment.start,
@@ -537,52 +629,64 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
               swipeTrailStrokeWidth: 8.0,
               onLetterSelected: (letter) {
                 setState(() {
-                  if(!_firstLetterSelected){
-                    _firstLetterSelected = true;
-                    _newWord +=letter;
-                  }
-                  else {
-                    _newWord +=letter;
-                  }
-                  _newWord = _newWord.toLowerCase().trim();
+                  _newWordPart +=letter;
+                  _newWordPart = _newWordPart.toLowerCase().trim();
                 });
-                // Optional: handle letter selection (e.g., update UI)
-                print("Letter selected: $letter");
               },
               onSwipeCompleted: (word) {
-                // Optional: handle the completed word (score, validation, etc)
-                print("User swiped/tapped: $word");
-                String visiblePart = _leftSideHidden ? _currentWord.substring(_currentSplitIndexes[0]) : _currentWord.substring(0, _currentSplitIndexes[0]);
-                print("Current visible part: $visiblePart");
-                print(_currentColorsIndexes.toString());
-                print("Current split indexes: $_currentSplitIndexes");
-
+                visiblePart = _leftSideHidden ? _currentWord.substring(_currentSplitIndex) : _currentWord.substring(0, _currentSplitIndex);
+                
                 if (_validationTimer != null && _validationTimer!.isActive) {
                   _validationTimer!.cancel();
                 }
                 _validationTimer = Timer(_validateDuration, () {
-                  if (_currentWord.isNotEmpty && _newWord.isNotEmpty) {
-                    String formedWord = _leftSideHidden ? _newWord + visiblePart : visiblePart + _newWord;
-                    _firstLetterSelected = false;
+                  if (_currentWord.isNotEmpty && _newWordPart.isNotEmpty) {
+                    String formedWord = _leftSideHidden ? _newWordPart + visiblePart : visiblePart + _newWordPart;
                     if (_allValidWords.contains(formedWord) && !_previousWords.contains(formedWord)) {
-                      setState(() {
-                        _previousWords.add(formedWord);
-                        if (_previousWords.length > 10) {
-                          _previousWords.removeAt(0);
-                        }
-                        _phase = GamePhase.formedWord;
+                      if (_resetWordTimer != null && _resetWordTimer!.isActive) {
+                        _resetWordTimer!.cancel();
+                      }
+                      bool mergeNeeded = true;
+
+                      if (formedWord.length == _currentWord.length){
+                        mergeNeeded = false;
+                      }
+
+                      if (mergeNeeded) {
+                        setState(() {
+                          _phase = GamePhase.startMerging;
+                        });
+                        Future.delayed(const Duration(milliseconds: 100), () {
+                          setState((){
+                            _currentWord = formedWord;
+                            _currentSplitIndex = _leftSideHidden ? _newWordPart.length : visiblePart.length;
+                            _phase = GamePhase.merging;
+                          });
+                        });
+                      }
+                      Future.delayed(const Duration(milliseconds: 350), () {
+                        setState(() {
+                          _previousWords.add(formedWord);
+                          if (_previousWords.length > 20) {
+                            _previousWords.removeAt(0);
+                          }
+                          _newWordPart = formedWord;
+                          _backgroundColorIndex = _splitColorIndex;
+                          _splitColorIndex = (_backgroundColorIndex+2)%Colors.primaries.length;
+                          _phase = GamePhase.formedWord;
+                        });
+                        _highlightController.forward(from: 0.0);
                       });
-                      _highlightController.forward(from: 0.0);
-                      Future.delayed(const Duration(milliseconds: 800), () {
-                        // _initializeGame();
+                      Future.delayed(const Duration(milliseconds: 1600), () {
+                        _nextTurn(formedWord);
                       });
                     }
                     else if (_previousWords.contains(formedWord)) {
                       // Already used word feedback
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Word was already used recently: $formedWord'),
-                          duration: const Duration(seconds: 1),
+                        const SnackBar(
+                          content: Text('Word was used recently'),
+                          duration: Duration(seconds: 1),
                         ),
                       );
                     }
@@ -594,7 +698,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                 }
                 _resetWordTimer = Timer(_resetWordDuration, () {
                   setState(() {
-                    _newWord = "";
+                    _newWordPart = "";
                     _currentWord = _previousWords.isNotEmpty ? _previousWords.last : _currentWord;
                     _phase = GamePhase.splitWord;
                   });
