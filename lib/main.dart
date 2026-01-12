@@ -166,11 +166,11 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
       if (_currentWord.length == 3) {
         _currentSplitIndex = 1 + simpleRand;
       } else
-      if (_currentWord.length > 6) {
+      if (_currentWord.length >= 6) {
         if (_leftSideHidden) {
-            _currentSplitIndex = 3;
+            _currentSplitIndex = 2+simpleRand;
           } else {
-            _currentSplitIndex =_currentWord.length - 4;
+            _currentSplitIndex =_currentWord.length - 2-simpleRand;
           }
       } else {
         _currentSplitIndex = 2 + random.nextInt(_currentWord.length - 3);
@@ -204,11 +204,11 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
       if (_currentWord.length == 3) {
         _currentSplitIndex = 1 + simpleRand;
       } else
-      if (_currentWord.length > 6) {
+      if (_currentWord.length >= 6) {
         if (_leftSideHidden) {
-            _currentSplitIndex = 3;
+            _currentSplitIndex = 2+simpleRand;
           } else {
-            _currentSplitIndex =_currentWord.length - 4;
+            _currentSplitIndex =_currentWord.length - 2-simpleRand;
           }
       } else {
         _currentSplitIndex = 2 + random.nextInt(_currentWord.length - 3);
@@ -642,6 +642,15 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                 _validationTimer = Timer(_validateDuration, () {
                   if (_currentWord.isNotEmpty && _newWordPart.isNotEmpty) {
                     String formedWord = _leftSideHidden ? _newWordPart + visiblePart : visiblePart + _newWordPart;
+                    if(formedWord.length < 3){
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('The word must be at least three-char long'),
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    }
+                    else
                     if (_allValidWords.contains(formedWord) && !_previousWords.contains(formedWord)) {
                       if (_resetWordTimer != null && _resetWordTimer!.isActive) {
                         _resetWordTimer!.cancel();
