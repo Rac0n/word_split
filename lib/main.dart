@@ -167,7 +167,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
         _currentSplitIndex = 1 + simpleRand;
       } else
       if (_currentWord.length >= 6) {
-        if (_leftSideHidden) {
+        if (!_leftSideHidden) {
             _currentSplitIndex = 2+simpleRand;
           } else {
             _currentSplitIndex =_currentWord.length - 2-simpleRand;
@@ -205,7 +205,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
         _currentSplitIndex = 1 + simpleRand;
       } else
       if (_currentWord.length >= 6) {
-        if (_leftSideHidden) {
+        if (!_leftSideHidden) {
             _currentSplitIndex = 2+simpleRand;
           } else {
             _currentSplitIndex =_currentWord.length - 2-simpleRand;
