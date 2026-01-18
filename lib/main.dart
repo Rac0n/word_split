@@ -9,16 +9,16 @@ void main() {
 }
 
 enum GamePhase {
-  starting,     // Phase 1: full word, full canvas
-  startSplit,    // Phase 2: start of the split process
-  splitting,    // Phase 3: split process and animation
-  splitWord,    // Phase 4: split view, one side hidden
-  startMerging, // Phase 4.5: Merge starting phase
-  merging,      // Phase 5: Merge the two parts of the new word
-  formedWord,   // Phase 6: new word formed
-  gameOver,     // Final Game Phase: game over
+  starting,
+  startSplit,
+  splitting,
+  splitWord,
+  startMerging,
+  merging,
+  formedWord,
+  gameOver,
+  pauseGame
 }
-
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -42,7 +42,7 @@ class GamePage extends StatefulWidget {
 
 class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
   // The duration a player has to find a word (starts with the new split, or the first split)
-  final Duration _turnDuration = const Duration(seconds: 60);
+  Duration _turnDuration = const Duration(seconds: 30);
   // The duration after which a word is checked whether it is right or wrong (fired after every completion)
   final Duration _validateDuration = const Duration(milliseconds: 650);
   // The duration after which a word is reset when it is wrong (fired after every completion)
@@ -52,7 +52,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
   final Duration _splitDuration = const Duration(milliseconds: 300);
   
   // The player's score
-  final int _score = 0;
+  int _score = 0;
   // The current word that was split
   String _currentWord = "";
   // The new word part that the player wrote
@@ -62,8 +62,8 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
   
   // The index where the current word was split
   int _currentSplitIndex = 0;
-  // The current turn number
-  int _currentTurn = 0;
+  // The number of found words
+  int _foundWords = 0;
   // Boolean about whether the app is loading or not
   bool _isLoading = true;
   
@@ -91,11 +91,16 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
   late final Animation<double> highlightPosition;
 
   GamePhase _phase = GamePhase.starting;
+  GamePhase _prevPhase = GamePhase.starting;
 
   // Timer used for the validation process
   Timer? _validationTimer;
   // Timer used for the word reset process
   Timer? _resetWordTimer;
+  // Timer for the turn countdown
+  Timer? _turnTimer;
+  // Remaining time in the current turn
+  Duration _remainingTime = const Duration(seconds: 0);
 
   @override
   void initState() {
@@ -142,6 +147,9 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
   }
 
   Future<void> _initializeGame() async {
+    setState(() {
+      _isLoading = true;
+    });
     await _loadStarterWords();
 
     await _loadValidWords();
@@ -149,57 +157,62 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
     final random = Random();
     _currentWord = _allStarterWords[random.nextInt(_allStarterWords.length)];
 
+    _previousWords.clear();
     _previousWords.add(_currentWord);
+    
+    _score = 0;
+    _foundWords = 0;
+    _turnDuration = const Duration(seconds: 30);
 
     _controller.forward(from: 0.0);
     setState(() {
       _isLoading = false;
+      _phase = GamePhase.starting;
     });
 
-    await Future.delayed(const Duration(seconds: 2));
-    _currentTurn += 1;
-  
-    setState((){
-      int simpleRand = random.nextInt(2);
-      _leftSideHidden = random.nextBool();
+    _nextTurn(_currentWord);
+  }
 
-      if (_currentWord.length == 3) {
-        _currentSplitIndex = 1 + simpleRand;
-      } else
-      if (_currentWord.length >= 6) {
-        if (!_leftSideHidden) {
-            _currentSplitIndex = 2+simpleRand;
-          } else {
-            _currentSplitIndex =_currentWord.length - 2-simpleRand;
-          }
+  void _startTurnTimer({bool resumed = false}) {
+    if (resumed) {
+      _turnDuration = _remainingTime;
+    }
+    
+    _turnTimer?.cancel();
+    _remainingTime = _turnDuration;
+    _turnTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
+      if (_remainingTime.inMilliseconds > 0) {
+        setState(() {
+          _remainingTime = _remainingTime - const Duration(milliseconds: 50);
+        });
       } else {
-        _currentSplitIndex = 2 + random.nextInt(_currentWord.length - 3);
+        _gameOver();
       }
-      
-      visiblePart = _leftSideHidden ? _currentWord.substring(_currentSplitIndex) : _currentWord.substring(0, _currentSplitIndex);
+    });
+  }
 
-      _phase = GamePhase.startSplit;
-    });
-    Future.delayed(const Duration(milliseconds: 100), () {
-      setState(() {
-        _phase = GamePhase.splitting;
-        _generateTiles();
-      });
-    });
-    Future.delayed(_splitDuration, () {
-      setState(() {
-        _phase = GamePhase.splitWord;
-      });
+  void _gameOver() {
+    _validationTimer?.cancel();
+    _resetWordTimer?.cancel();
+    _turnTimer?.cancel();
+    setState(() {
+      _phase = GamePhase.gameOver;
     });
   }
 
   Future<void> _nextTurn(foundWord) async {
     _currentWord = foundWord;
-    _currentTurn += 1;
+    // Decrease turn duration, with a minimum of 5 seconds
+    if (_turnDuration.inSeconds > 5) {
+      _turnDuration -= const Duration(seconds: 1);
+    }
+
+    _startTurnTimer();
+
     final random = Random();
     int simpleRand = random.nextInt(2);
     _newWordPart = "";
-    setState((){
+    setState(() {
       _leftSideHidden = !_leftSideHidden;
       if (_currentWord.length == 3) {
         _currentSplitIndex = 1 + simpleRand;
@@ -325,12 +338,20 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
 
   }
 
+  void _resumeGame() {
+    _startTurnTimer(resumed: true);
+    setState(() {
+      _phase = _prevPhase;
+    });
+  }
+
   @override
   void dispose() {
     _controller.dispose();
     _highlightController.dispose();
     _validationTimer?.cancel();
     _resetWordTimer?.cancel();
+    _turnTimer?.cancel();
     super.dispose();
   }
 
@@ -553,6 +574,120 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
               ),
             ),
           ),
+          if (_phase == GamePhase.gameOver)
+          Container(
+            color: Colors.black.withOpacity(0.4),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'Game Over',
+                    style: TextStyle(
+                      fontSize: 48,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red.shade800,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Final Score: $_score',
+                    style: const TextStyle(
+                      fontSize: 32,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    'Found Words: $_foundWords',
+                    style: const TextStyle(
+                      fontSize: 32,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4DB6AC),
+                      borderRadius: BorderRadius.circular(12.0),
+                      border: Border.all(
+                        color: Colors.black,
+                        width: 4,
+                      ),
+                    ),
+                    child: const Text(
+                      'Restart',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: "SpaceMono",
+                        fontSize: 36,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                  )
+                ],
+              ),
+            ),
+          ),
+          if (_phase == GamePhase.pauseGame)
+          Container(
+            color: Colors.black.withOpacity(0.4),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Paused',
+                    style: TextStyle(
+                      fontSize: 48,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Score: $_score',
+                    style: const TextStyle(
+                      fontSize: 32,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Found Words: $_foundWords',
+                    style: const TextStyle(
+                      fontSize: 32,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4DB6AC),
+                      borderRadius: BorderRadius.circular(12.0),
+                      border: Border.all(
+                        color: Colors.black,
+                        width: 4,
+                      ),
+                    ),
+                    child: const Text(
+                      'Resume',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontFamily: "SpaceMono",
+                        fontSize: 36,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                    ),
+                  )
+                ],
+              ),
+            ),
+          ),
           Column(
             mainAxisAlignment: MainAxisAlignment.start,
             children: <Widget>[
@@ -572,11 +707,22 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                   ),
                   Row(
                     children: [
+                      if (_phase != GamePhase.pauseGame)
                       IconButton(
                         icon: const Icon(Icons.pause),
                         iconSize: 28,
                         color: Colors.black,
-                        onPressed: () {},
+                        onPressed: () {
+                          setState(() {
+                            _prevPhase = _phase;
+                            _phase = GamePhase.pauseGame;
+                          });
+                          if (_turnTimer != null && _turnTimer!.isActive) {
+                            _turnTimer!.cancel();
+                          } else {
+                            _startTurnTimer();
+                          }
+                        },
                       ),
                       const SizedBox(width: 8),
                       IconButton(
@@ -592,17 +738,23 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                 child: Container(
+                  alignment: Alignment.centerLeft,
+                  width: totalWidth-40,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(8.0),
                     border: Border.all(color: Colors.black, width: 4),
                   ),
                   child: ClipRRect(
                     clipBehavior: Clip.antiAlias,
-                    child: LinearProgressIndicator(
-                      value: _turnDuration.inSeconds / 60,
-                      backgroundColor: Colors.grey[200],
-                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF4DB6AC)),
-                      minHeight: 12,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 50),
+                      width: (totalWidth-36)*(_remainingTime.inMilliseconds / _turnDuration.inMilliseconds),
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4DB6AC),
+                        borderRadius: BorderRadius.circular(6.0)
+                      ),
                     ),
                   ),
                 ),
@@ -652,6 +804,12 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                     }
                     else
                     if (_allValidWords.contains(formedWord) && !_previousWords.contains(formedWord)) {
+                       // Scoring: length of new part * remaining time
+                      setState(() {
+                        _score += _newWordPart.length * _remainingTime.inSeconds;
+                      });
+
+                      _turnTimer?.cancel();
                       if (_resetWordTimer != null && _resetWordTimer!.isActive) {
                         _resetWordTimer!.cancel();
                       }
@@ -666,7 +824,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                           _phase = GamePhase.startMerging;
                         });
                         Future.delayed(const Duration(milliseconds: 100), () {
-                          setState((){
+                          setState(() {
                             _currentWord = formedWord;
                             _currentSplitIndex = _leftSideHidden ? _newWordPart.length : visiblePart.length;
                             _phase = GamePhase.merging;
@@ -742,7 +900,7 @@ class TileButton extends StatelessWidget {
         margin: const EdgeInsets.all(4),
         decoration: BoxDecoration(
           color: isSelected ? const Color.fromARGB(255, 54, 129, 121) : const Color(0xFF4DB6AC),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(12.0),
           border: Border.all(
             color: themeColor,
             width: 4,
