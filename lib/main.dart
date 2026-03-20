@@ -42,7 +42,7 @@ class GamePage extends StatefulWidget {
 
 class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
   // The duration a player has to find a word (starts with the new split, or the first split)
-  Duration _turnDuration = const Duration(seconds: 30);
+  Duration _turnDuration = const Duration(seconds: 20);
   // The duration after which a word is checked whether it is right or wrong (fired after every completion)
   final Duration _validateDuration = const Duration(milliseconds: 650);
   // The duration after which a word is reset when it is wrong (fired after every completion)
@@ -162,7 +162,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
     
     _score = 0;
     _foundWords = 0;
-    _turnDuration = const Duration(seconds: 30);
+    _turnDuration = const Duration(seconds: 20);
 
     _controller.forward(from: 0.0);
     setState(() {
@@ -174,12 +174,10 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
   }
 
   void _startTurnTimer({bool resumed = false}) {
-    if (resumed) {
-      _turnDuration = _remainingTime;
-    }
-    
     _turnTimer?.cancel();
-    _remainingTime = _turnDuration;
+    if (!resumed) {
+      _remainingTime = _turnDuration;
+    }
     _turnTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
       if (_remainingTime.inMilliseconds > 0) {
         setState(() {
@@ -581,12 +579,12 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
+                  const Text(
                     'Game Over',
                     style: TextStyle(
                       fontSize: 48,
                       fontWeight: FontWeight.bold,
-                      color: Colors.red.shade800,
+                      color: Color.fromARGB(255, 118, 15, 15),
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -606,26 +604,28 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                     ),
                   ),
                   const SizedBox(height: 40),
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF4DB6AC),
-                      borderRadius: BorderRadius.circular(12.0),
-                      border: Border.all(
-                        color: Colors.black,
-                        width: 4,
+                  MaterialButton(
+                    onPressed: _initializeGame,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4DB6AC),
+                        borderRadius: BorderRadius.circular(12.0),
+                        border: Border.all(
+                          color: Colors.black,
+                          width: 4,
+                        ),
                       ),
-                    ),
-                    child: const Text(
-                      'Restart',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontFamily: "SpaceMono",
-                        fontSize: 36,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black,
+                      child: const Text(
+                        'Restart',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
                       ),
-                    ),
+                    )
                   )
                 ],
               ),
@@ -654,7 +654,7 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                       color: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 5),
                   Text(
                     'Found Words: $_foundWords',
                     style: const TextStyle(
@@ -663,26 +663,28 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                     ),
                   ),
                   const SizedBox(height: 40),
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF4DB6AC),
-                      borderRadius: BorderRadius.circular(12.0),
-                      border: Border.all(
-                        color: Colors.black,
-                        width: 4,
+                  MaterialButton(
+                    onPressed: _resumeGame,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 20),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4DB6AC),
+                        borderRadius: BorderRadius.circular(12.0),
+                        border: Border.all(
+                          color: Colors.black,
+                          width: 4,
+                        ),
                       ),
-                    ),
-                    child: const Text(
-                      'Resume',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontFamily: "SpaceMono",
-                        fontSize: 36,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black,
+                      child: const Text(
+                        'Resume',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black,
+                        ),
                       ),
-                    ),
+                    )
                   )
                 ],
               ),
@@ -707,10 +709,10 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                   ),
                   Row(
                     children: [
-                      if (_phase != GamePhase.pauseGame)
+                      if (_phase == GamePhase.startSplit && _phase == GamePhase.splitting && _phase == GamePhase.splitWord)
                       IconButton(
                         icon: const Icon(Icons.pause),
-                        iconSize: 28,
+                        iconSize: 32,
                         color: Colors.black,
                         onPressed: () {
                           setState(() {
@@ -726,17 +728,27 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                       ),
                       const SizedBox(width: 8),
                       IconButton(
-                        iconSize: 28,
+                        iconSize: 32,
                         color: Colors.black,
-                        icon: const Icon(Icons.menu),
-                        onPressed: () {},
+                        icon: const Icon(Icons.close),
+                        onPressed: () {
+                          setState(() {
+                            _prevPhase = _phase;
+                            _phase = GamePhase.pauseGame;
+                          });
+                          if (_turnTimer != null && _turnTimer!.isActive) {
+                            _turnTimer!.cancel();
+                          } else {
+                            _startTurnTimer();
+                          }
+                        },
                       ),
                     ],
                   )
                 ],
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
                 child: Container(
                   alignment: Alignment.centerLeft,
                   width: totalWidth-40,
@@ -749,11 +761,11 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                     clipBehavior: Clip.antiAlias,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 50),
-                      width: (totalWidth-36)*(_remainingTime.inMilliseconds / _turnDuration.inMilliseconds),
+                      width: (totalWidth-40)*(_remainingTime.inMilliseconds / _turnDuration.inMilliseconds),
                       height: 12,
                       decoration: BoxDecoration(
                         color: const Color(0xFF4DB6AC),
-                        borderRadius: BorderRadius.circular(6.0)
+                        borderRadius: BorderRadius.circular(4.0)
                       ),
                     ),
                   ),
@@ -806,7 +818,8 @@ class _GamePageState extends State<GamePage> with TickerProviderStateMixin {
                     if (_allValidWords.contains(formedWord) && !_previousWords.contains(formedWord)) {
                        // Scoring: length of new part * remaining time
                       setState(() {
-                        _score += _newWordPart.length * _remainingTime.inSeconds;
+                        _foundWords++;
+                        _score += ((_newWordPart.length+formedWord.length * (_remainingTime.inSeconds/_turnDuration.inSeconds))*10).floor();
                       });
 
                       _turnTimer?.cancel();
